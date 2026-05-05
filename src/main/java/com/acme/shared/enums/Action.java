@@ -1,0 +1,21 @@
+package com.acme.shared.enums;
+
+public enum Action {
+  ALL,
+  CREATE,
+  UPDATE,
+  DELETE,
+  IMPORT,
+  EXPORT,
+  SYNC,
+  SIGNIN,
+  BACKUP,
+  PASSWORD_RESET,
+  LARK_SIGNIN,
+  PASSKEY_SIGNIN,
+  DOWNLOAD,
+  SEND_EMAIL,
+  SEND_LARK,
+  SEND_MOBILE,
+  NOTIFICATION
+}
