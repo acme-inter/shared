@@ -66,8 +66,8 @@ public class SharedConfiguration {
 
   @Bean
   @ConditionalOnMissingBean
-  public CookieUtil cookieUtil(Encryption encryption) {
-    return new CookieUtil(encryption);
+  public CookieUtil cookieUtil(Encryption encryption, Properties properties) {
+    return new CookieUtil(encryption, properties);
   }
 
   @Bean

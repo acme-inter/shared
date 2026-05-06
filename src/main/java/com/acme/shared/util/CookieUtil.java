@@ -1,5 +1,6 @@
 package com.acme.shared.util;
 
+import com.acme.shared.constant.Properties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -13,6 +14,7 @@ import java.time.Duration;
 public class CookieUtil {
 
   private final Encryption encryption;
+  private final Properties properties;
 
   private static final String STRICT_SITE = "Strict";
   private static final String MEMBER_ID_COOKIE_KEY = "UID";
@@ -53,9 +55,6 @@ public class CookieUtil {
                   Duration maxAge, boolean httpOnly) {
     addCookie(response, key, value, maxAge, httpOnly);
   }
-  public void setEncoded(ServerHttpResponse response, String key, String value, Duration maxAge) {
-    addCookie(response, key, encryption.encodeKey(value), maxAge, false);
-  }
 
   // ─── Clear ───────────────────────────────────────────────────────────────
 
@@ -94,7 +93,7 @@ public class CookieUtil {
                          Duration maxAge, boolean httpOnly) {
     ResponseCookie cookie = ResponseCookie.from(key, value)
         .httpOnly(httpOnly)
-        .secure(true)
+        .secure(properties.isSecure())
         .sameSite(STRICT_SITE)
         .maxAge(maxAge)
         .path("/")

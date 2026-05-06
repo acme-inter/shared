@@ -9,4 +9,5 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "app.security")
 public class Properties {
   private String  secret;
+  private boolean secure;
 }
