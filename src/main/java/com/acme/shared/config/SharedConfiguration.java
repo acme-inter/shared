@@ -79,8 +79,8 @@ public class SharedConfiguration {
   @Bean
   @ConditionalOnMissingBean
   @ConditionalOnBean(R2dbcEntityTemplate.class)
-  public DbUtil dbUtil(R2dbcEntityTemplate template, EventService eventService, MsgUtil msgUtil) {
-    return new DbUtil(template, eventService, msgUtil);
+  public DbUtil dbUtil(ObjectMapper objectMapper, R2dbcEntityTemplate template, EventService eventService, MsgUtil msgUtil) {
+    return new DbUtil(template, eventService, msgUtil,objectMapper);
   }
 
   @Bean

@@ -100,4 +100,37 @@ public class LogMsgDTO {
         .createdAt(OffsetDateTime.now())
         .build();
   }
+
+  public static LogMsgDTO from(
+      AuditDTO audit,
+      Modules module,
+      String action,
+      String description,
+      String clazz,
+      Long ownerId,
+      Long recordId,
+      String oldValue,
+      String newValue,
+      Boolean isCollaborate,
+      List<Long> collaborators
+  ) {
+    return LogMsgDTO.builder()
+        .module(module)
+        .action(action)
+        .description(description)
+        .clazz(clazz)
+        .memberId(audit.getMemberId())
+        .departmentId(audit.getDepartmentId())
+        .ipAddress(audit.getIp())
+        .browser(audit.getBrowser())
+        .deviceType(audit.getDeviceType())
+        .ownerId(ownerId)
+        .recordId(recordId)
+        .oldValue(oldValue)
+        .newValue(newValue)
+        .isCollaborate(isCollaborate)
+        .collaborators(collaborators)
+        .createdAt(OffsetDateTime.now())
+        .build();
+  }
 }

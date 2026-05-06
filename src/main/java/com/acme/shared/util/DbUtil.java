@@ -42,6 +42,7 @@ public class DbUtil {
   public final R2dbcEntityTemplate template;
   private final EventService eventService;
   private final MsgUtil msgUtil;
+  private final ObjectMapper objectMapper;
 
   public <T> Mono<T> getById(Long id, Class<T> clazz) {
     return template.selectOne(
@@ -69,6 +70,30 @@ public class DbUtil {
                     extractId(saved),
                     null,
                     null
+                )
+            ))
+            .thenReturn(saved));
+  }
+  public <T> Mono<T> save(T entity,
+                          Class<T> clazz,
+                          String description,
+                          Boolean isCollaborator,
+                          List<Long> collaboratorIds) {
+    return template.insert(clazz).using(entity)
+        .flatMap(saved -> auditContext()
+            .flatMap(audit -> eventService.publishLog(
+                LogMsgDTO.from(
+                    audit,
+                    audit.getModule(),     // <-- set properly
+                    Action.CREATE.toString(),
+                    description,
+                    clazz.getSimpleName(),   // or service name
+                    null,
+                    extractId(saved),
+                    null,
+                    null,
+                    isCollaborator,
+                    collaboratorIds
                 )
             ))
             .thenReturn(saved));
@@ -135,6 +160,39 @@ public class DbUtil {
                             String description,
                             GuardUtil guardUtil,
                             ToLongFunction<T> ownerExtractor,
+                            String deniedMessageCode,
+                            Boolean isCollaborator,
+                            List<Long> collaboratorIds) {
+    return getById(id, clazz)
+        .switchIfEmpty(Mono.error(new ThrowException(notFoundMsgCode)))
+        .flatMap(oldEntity -> {
+          Mono<Long> guardCheck = (guardUtil != null)
+              ? guardUtil.requireRoleOrOwner(
+              () -> ownerExtractor.applyAsLong(oldEntity),
+              deniedMessageCode)
+              : Mono.just(0L);
+
+          return guardCheck.flatMap(callerId ->
+              applyUpdate(id, update, clazz)
+                  .flatMap(newEntity ->
+                      auditContext()
+                          .flatMap(audit -> eventService.publishLog(LogMsgDTO.from(
+                              audit, audit.getModule(), Action.UPDATE.toString(),
+                              clazz.getSimpleName(), description,
+                              extractOwnerId(oldEntity), id,
+                              toJson(oldEntity),
+                              toJson(newEntity),
+                              isCollaborator,
+                              collaboratorIds
+                          )))
+                          .thenReturn(newEntity)));
+        });
+  }
+  public <T> Mono<T> update(Long id, Update update, Class<T> clazz,
+                            String notFoundMsgCode,
+                            String description,
+                            GuardUtil guardUtil,
+                            ToLongFunction<T> ownerExtractor,
                             String deniedMessageCode) {
     return getById(id, clazz)
         .switchIfEmpty(Mono.error(new ThrowException(notFoundMsgCode)))
@@ -153,7 +211,9 @@ public class DbUtil {
                               audit, audit.getModule(), Action.UPDATE.toString(),
                               clazz.getSimpleName(), description,
                               extractOwnerId(oldEntity), id,
-                              toJson(oldEntity), toJson(newEntity))))
+                              toJson(oldEntity),
+                              toJson(newEntity)
+                          )))
                           .thenReturn(newEntity)));
         });
   }
@@ -421,7 +481,6 @@ public class DbUtil {
   public String toJson(Object obj) {
     if (obj == null) return null;
     try {
-      ObjectMapper objectMapper = new ObjectMapper();
       return objectMapper.writeValueAsString(obj);
     } catch (Exception e) {
       log.warn("Failed to serialize entity to JSON: {}", e.getMessage());
@@ -432,7 +491,6 @@ public class DbUtil {
   public <T> T parseJson(String json, Class<T> clazz) {
     if (json == null) return null;
     try {
-      ObjectMapper objectMapper = new ObjectMapper();
       return objectMapper.readValue(json, clazz);
     } catch (Exception e) {
       return null;
@@ -441,7 +499,16 @@ public class DbUtil {
 
   public <T> List<T> parseJsonList(String json, Class<T> type) {
     try {
-      ObjectMapper objectMapper = new ObjectMapper();
+      return objectMapper.readValue(json, objectMapper.getTypeFactory()
+          .constructCollectionType(List.class, type));
+    } catch (Exception e) {
+      throw new ThrowException("JSON list parse failed for " + type.getSimpleName());
+    }
+  }
+
+  public <T> List<T> parseJsonListWithCheck(String json, Class<T> type) {
+    if (json == null) return Collections.emptyList();
+    try {
       return objectMapper.readValue(json, objectMapper.getTypeFactory()
           .constructCollectionType(List.class, type));
     } catch (Exception e) {
