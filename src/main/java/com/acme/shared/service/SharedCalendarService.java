@@ -56,14 +56,26 @@ public class SharedCalendarService {
 
   public Mono<JsonNode> createEvent(Long memberId, String calendarId, CreateEventDTO req) {
     Map<String, Object> body = buildEventBody(req);
+
     return withToken(memberId, token -> webClient.post()
         .uri(BASE + "/calendars/{cal}/events", calendarId)
         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
         .contentType(MediaType.APPLICATION_JSON)
-        .bodyValue(body)
+        .bodyValue(body)   // ← Map, not String
         .retrieve()
+        .onStatus(
+            status -> status.is4xxClientError() || status.is5xxServerError(),
+            response -> response.bodyToMono(String.class)
+                .doOnNext(errorBody -> log.error(
+                    "Google Calendar API error: status={} body={}",
+                    response.statusCode(), errorBody))
+                .flatMap(errorBody -> Mono.error(
+                    new RuntimeException("Google Calendar error "
+                        + response.statusCode() + ": " + errorBody)))
+        )
         .bodyToMono(JsonNode.class));
   }
+
 
   /**
    * Fully replaces an existing event (PUT).
@@ -105,37 +117,61 @@ public class SharedCalendarService {
         .bodyToMono(Void.class));
   }
 
+  public Mono<Map<String, Object>> debugToken(Long memberId) {
+    return tokenProvider.apply(memberId)
+        .flatMap(token -> webClient.get()
+            .uri("https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=" + token)
+            .retrieve()
+            .bodyToMono(JsonNode.class)
+            .map(info -> {
+              Map<String, Object> result = new LinkedHashMap<>();
+              result.put("scope",       info.path("scope").asString());
+              result.put("email",       info.path("email").asString());
+              result.put("expires_in",  info.path("expires_in").asString());
+              result.put("tokenPrefix", token.substring(0, Math.min(20, token.length())));
+              return result;
+            }));
+  }
+
   // ── Event body builder ────────────────────────────────────────────────────
 
   private Map<String, Object> buildEventBody(CreateEventDTO req) {
     Map<String, Object> body = new LinkedHashMap<>();
 
-    // ─── Time ───────────────────────────────────────────────────────────────
-    Map<String, Object> start;
-    Map<String, Object> end;
+    // ── Core fields — only include when non-null / non-blank ──────────────────
+    if (req.getSummary()     != null && !req.getSummary().isBlank())
+      body.put("summary",     req.getSummary());
+    if (req.getDescription() != null && !req.getDescription().isBlank())
+      body.put("description", req.getDescription());
+    if (req.getLocation()    != null && !req.getLocation().isBlank())
+      body.put("location",    req.getLocation());           // ← was always sent even when null
+
+    // ── Time ──────────────────────────────────────────────────────────────────
+    Map<String, Object> start = new LinkedHashMap<>();
+    Map<String, Object> end   = new LinkedHashMap<>();
 
     if (req.isAllDay()) {
-      start = Map.of("date", req.getStartDate());
-      end   = Map.of("date", req.getEndDate());
+      start.put("date", req.getStartDate());
+      end.put("date",   req.getEndDate());
+      // NO timeZone key for all-day events — Google rejects it
     } else {
-      start = Map.of("dateTime", req.getStartDateTime(), "timeZone", req.getTimeZone());
-      end   = Map.of("dateTime", req.getEndDateTime(),   "timeZone", req.getTimeZone());
+      start.put("dateTime", req.getStartDateTime());
+      start.put("timeZone", req.getTimeZone() != null ? req.getTimeZone() : "Asia/Bangkok");
+      end.put("dateTime",   req.getEndDateTime());
+      end.put("timeZone",   req.getTimeZone() != null ? req.getTimeZone() : "Asia/Bangkok");
     }
 
-    body.put("summary",     req.getSummary());
-    body.put("description", req.getDescription());
-    body.put("location",    req.getLocation());
-    body.put("start",       start);
-    body.put("end",         end);
+    body.put("start", start);
+    body.put("end",   end);
 
-    // ─── Attendees ───────────────────────────────────────────────────────────
+    // ── Attendees ─────────────────────────────────────────────────────────────
     if (req.getAttendees() != null && !req.getAttendees().isEmpty()) {
       body.put("attendees", req.getAttendees().stream()
           .map(email -> Map.of("email", email))
           .toList());
     }
 
-    // ─── Reminders ───────────────────────────────────────────────────────────
+    // ── Reminders ─────────────────────────────────────────────────────────────
     if (req.getReminderMinutes() != null) {
       body.put("reminders", Map.of(
           "useDefault", false,
@@ -143,12 +179,12 @@ public class SharedCalendarService {
       ));
     }
 
-    // ─── Recurrence ──────────────────────────────────────────────────────────
+    // ── Recurrence ────────────────────────────────────────────────────────────
     if (req.getRecurrence() != null && !req.getRecurrence().isEmpty()) {
       body.put("recurrence", req.getRecurrence());
     }
 
-    // ─── Google Meet / conferencing ──────────────────────────────────────────
+    // ── Conference (Google Meet) ───────────────────────────────────────────────
     if (req.getConferenceSolution() != null) {
       body.put("conferenceData", Map.of(
           "createRequest", Map.of(
@@ -158,13 +194,14 @@ public class SharedCalendarService {
       ));
     }
 
-    // ─── Visibility / status ─────────────────────────────────────────────────
+    // ── Visibility / status ───────────────────────────────────────────────────
     if (req.getVisibility()   != null) body.put("visibility",   req.getVisibility());
     if (req.getTransparency() != null) body.put("transparency", req.getTransparency());
     if (req.getStatus()       != null) body.put("status",       req.getStatus());
 
     return body;
   }
+
 
   // ── Token helper ──────────────────────────────────────────────────────────
 

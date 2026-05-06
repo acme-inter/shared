@@ -218,6 +218,7 @@ public class SharedGmailService {
         .bodyToMono(JsonNode.class));
   }
 
+  @SuppressWarnings("unused")
   private String buildRawMessage(String to, String cc, String bcc, String subject,
                                  String body, boolean html, String inReplyTo,
                                  String threadId, List<EmailAttachment> attachments) {
@@ -236,15 +237,16 @@ public class SharedGmailService {
     if (attachments == null || attachments.isEmpty()) {
       sb.append("Content-Type: ")
           .append(html ? "text/html" : "text/plain")
-          .append("; charset=UTF-8\r\n\r\n")
-          .append(body);
+          .append("; charset=UTF-8\r\n");
+      sb.append("Content-Transfer-Encoding: base64\r\n\r\n");
+      sb.append(Base64.getMimeEncoder().encodeToString(body.getBytes(StandardCharsets.UTF_8)));
     } else {
       sb.append("Content-Type: multipart/mixed; boundary=").append(boundary).append("\r\n\r\n");
       sb.append("--").append(boundary).append("\r\n");
       sb.append("Content-Type: ").append(html ? "text/html" : "text/plain")
           .append("; charset=UTF-8\r\n");
-      sb.append("Content-Transfer-Encoding: 7bit\r\n\r\n");
-      sb.append(body).append("\r\n");
+      sb.append("Content-Transfer-Encoding: base64\r\n\r\n");
+      sb.append(Base64.getMimeEncoder().encodeToString(body.getBytes(StandardCharsets.UTF_8))).append("\r\n");
 
       for (EmailAttachment att : attachments) {
         sb.append("--").append(boundary).append("\r\n");

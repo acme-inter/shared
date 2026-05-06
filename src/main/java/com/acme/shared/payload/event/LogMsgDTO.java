@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 @Data
 @Builder
@@ -36,6 +37,9 @@ public class LogMsgDTO {
   private Long recordId;
   private String oldValue;   // JSON before (null for CREATE)
   private String newValue;   // JSON after  (null for DELETE)
+
+  private Boolean isCollaborate;
+  private List<Long> collaborators;
 
   private OffsetDateTime createdAt;
 

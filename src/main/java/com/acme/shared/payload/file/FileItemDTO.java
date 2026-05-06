@@ -8,6 +8,7 @@ import lombok.NoArgsConstructor;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 @Data
 @Builder
@@ -45,7 +46,7 @@ public class FileItemDTO {
         .name(name)
         .type("file")
         .size(obj.size())
-        .lastModified(OffsetDateTime.from(obj.lastModified()))
+        .lastModified(obj.lastModified().atOffset(ZoneOffset.UTC))
         .contentType(null)
         .path(parentPrefix)
         .etag(obj.eTag())
