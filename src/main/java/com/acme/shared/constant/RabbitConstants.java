@@ -52,6 +52,6 @@ public final class RabbitConstants {
   public static final String SYNC_REQUEST_EXCHANGE    = "sync.request.exchange";
   public static final String SYNC_REQUEST_QUEUE       = "sync.request.queue";
   public static final String SYNC_REQUEST_ROUTING_KEY = "sync.request";
-  public static final String USER_SYNC_REQUEST_QUEUE  = "user.sync.request.queue";
+  public static final String MEMBER_SYNC_REQUEST_QUEUE  = "member.sync.request.queue";
   public static final String DEPARTMENT_SYNC_REQUEST_QUEUE  = "department.sync.request.queue";
 }
