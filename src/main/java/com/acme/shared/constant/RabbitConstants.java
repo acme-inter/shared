@@ -9,12 +9,24 @@ public final class RabbitConstants {
   public static final String MEMBER_QUEUE       = "member.queue";
   public static final String MEMBER_ROUTING_KEY = "member.#";
   public static final String MEMBER_SYNC_ROUTING_KEY = "member.sync";   // ← add
+  public static final String CRM_MEMBER_QUEUE = "crm.member.queue";
+  public static final String CRM_MEMBER_ROUTING_KEY = "member.crm";
+  public static final String ERP_MEMBER_QUEUE = "erp.member.queue";
+  public static final String ERP_MEMBER_ROUTING_KEY = "member.erp";
+  public static final String CHECKLIST_MEMBER_QUEUE = "checklist.member.queue";
+  public static final String CHECKLIST_MEMBER_ROUTING_KEY = "member.checklist";
 
   // ─── Department ───────────────────────────────────────────────────────────
   public static final String DEPARTMENT_EXCHANGE    = "department.exchange";
   public static final String DEPARTMENT_QUEUE       = "department.queue";
   public static final String DEPARTMENT_ROUTING_KEY = "department.#";
   public static final String DEPARTMENT_SYNC_ROUTING_KEY = "department.sync";
+  public static final String CRM_DEPARTMENT_QUEUE = "crm.department.queue";
+  public static final String CRM_DEPARTMENT_ROUTING_KEY = "department.crm";
+  public static final String ERP_DEPARTMENT_QUEUE = "erp.department.queue";
+  public static final String ERP_DEPARTMENT_ROUTING_KEY = "department.erp";
+  public static final String CHECKLIST_DEPARTMENT_QUEUE = "checklist.department.queue";
+  public static final String CHECKLIST_DEPARTMENT_ROUTING_KEY = "department.checklist";
 
   // ─── Setting ──────────────────────────────────────────────────────────────
   public static final String SETTING_EXCHANGE    = "setting.exchange";
