@@ -35,6 +35,7 @@ public class PagedResponse<T> {
   public static <T> PagedResponse<T> success(String msg, int index, int size) {
     return PagedResponse.<T>builder()
         .success(true).message(msg)
+        .data(List.of())
         .totalPages(0).totalElements(0)
         .index(index).size(size).build();
   }
