@@ -4,7 +4,7 @@ public enum Modules {
   API,
   USER,
   ADMIN,
-  ACCOUNT,
+  ERP,
   CRM,
   CHECKLIST,
   DOOR,

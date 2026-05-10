@@ -62,6 +62,13 @@ public class PagedResponse<T> {
         .index(index).size(size).build();
   }
 
+  public static <T> PagedResponse<T> cursorEmptySuccess(String message, boolean hasNext) {
+    return PagedResponse.<T>builder()
+        .success(true).message(message)
+        .data(List.of())
+        .hasNext(hasNext).build();
+  }
+
   public static <T> PagedResponse<T> cursorSuccess(String message, List<T> data, boolean hasNext) {
     return PagedResponse.<T>builder()
         .success(true).message(message)
@@ -78,7 +85,7 @@ public class PagedResponse<T> {
   }
 
   public static <T> PagedResponse<T> error(String message, String error) {
-    return PagedResponse.<T>builder()
+    return PagedResponse.<T>builder().data(List.of())
         .success(false).message(message).error(error).build();
   }
 }

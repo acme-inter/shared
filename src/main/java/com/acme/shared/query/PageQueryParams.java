@@ -13,6 +13,7 @@ public class PageQueryParams {
 
   private final String                     keyword;
   private final List<String>               searchFields;
+  private final List<String>               numberSearchFields;
   private final Map<String, Object>        filters;
   private final Map<String, Collection<?>> inFilters;
   private final Map<String, DateRange>     dateRanges;
@@ -30,75 +31,88 @@ public class PageQueryParams {
   private final List<FilterDTO>            columnFilters;
   private final Set<String>                allowedFilterFields;
 
-  // ─── Pinned-ids-first ordering ───────────────────────────────────────────
-  /** When set, these ids are floated to the top of ORDER BY (in list order)
-   *  regardless of the normal sort. Safe: values are Long, never interpolated as strings. */
+  // ─── Pinned-ids-first ordering ────────────────────────────────────────────
   private final List<Long> pinnedIds;
 
   // ─── Audit-scope fields ───────────────────────────────────────────────────
-  /** When true, PagedQueryBuilder resolves the caller's role and department from
-   *  the security context and automatically scopes the WHERE clause. */
   private final boolean auditEnabled;
-  /** Column name in the view/table that holds the owning department id.
-   *  Defaults to "department_id". */
   private final String  auditDepartmentField;
 
   // ─── Soft-delete visibility ───────────────────────────────────────────────
-  /** When true, soft-delete filtering is active.
-   *  Privileged roles (ADMINISTRATOR / DEVELOPER) see all rows;
-   *  all other roles only see rows where {@code deleteField = false}. */
   private final boolean checkDeleteEnabled;
-  /** Column name that holds the soft-delete flag. Defaults to "is_deleted". */
   private final String  deleteField;
 
+  // ─── Secondary sort ───────────────────────────────────────────────────────
+  /** Optional secondary sort column applied after the primary orderBy. */
+  private final String  thenOrderBy;
+  private final boolean thenDescending;
+
   private PageQueryParams(Builder b) {
-    this.keyword             = b.keyword;
-    this.searchFields        = List.copyOf(b.searchFields);
-    this.filters             = Map.copyOf(b.filters);
-    this.inFilters           = Map.copyOf(b.inFilters);
-    this.dateRanges          = Map.copyOf(b.dateRanges);
-    this.ftsField            = b.ftsField;
-    this.ftsQuery            = b.ftsQuery;
-    this.index               = Math.max(0, b.index);
-    this.size                = Math.clamp(b.size, 1, 1000);
-    this.orderBy             = b.orderBy;
-    this.descending          = b.descending;
-    this.cursor              = b.cursor;
-    this.cursorField         = b.cursorField != null ? b.cursorField : "id";
-    this.cursorMode          = b.cursorMode;
-    this.idField             = b.idField;
-    this.selectIds           = b.selectIds != null ? List.copyOf(b.selectIds) : List.of();
-    this.columnFilters       = b.columnFilters != null ? List.copyOf(b.columnFilters) : List.of();
-    this.allowedFilterFields = b.allowedFilterFields != null
+    this.keyword              = b.keyword;
+    this.searchFields         = List.copyOf(b.searchFields);
+    this.numberSearchFields   = List.copyOf(b.numberSearchFields);
+    this.filters              = Map.copyOf(b.filters);
+    this.inFilters            = Map.copyOf(b.inFilters);
+    this.dateRanges           = Map.copyOf(b.dateRanges);
+    this.ftsField             = b.ftsField;
+    this.ftsQuery             = b.ftsQuery;
+    this.index                = Math.max(0, b.index);
+    this.size                 = Math.clamp(b.size, 1, 1000);
+    this.orderBy              = b.orderBy;
+    this.descending           = b.descending;
+    this.cursor               = b.cursor;
+    this.cursorField          = b.cursorField != null ? b.cursorField : "id";
+    this.cursorMode           = b.cursorMode;
+    this.idField              = b.idField;
+    this.selectIds            = b.selectIds != null ? List.copyOf(b.selectIds) : List.of();
+    this.columnFilters        = b.columnFilters != null ? List.copyOf(b.columnFilters) : List.of();
+    this.allowedFilterFields  = b.allowedFilterFields != null
         ? Set.copyOf(b.allowedFilterFields) : Set.of();
-    this.pinnedIds           = b.pinnedIds != null ? List.copyOf(b.pinnedIds) : List.of();
-    this.auditEnabled        = b.auditEnabled;
+    this.pinnedIds            = b.pinnedIds != null ? List.copyOf(b.pinnedIds) : List.of();
+    this.auditEnabled         = b.auditEnabled;
     this.auditDepartmentField = b.auditDepartmentField != null
         ? b.auditDepartmentField : "department_id";
-    this.checkDeleteEnabled  = b.checkDeleteEnabled;
-    this.deleteField         = b.deleteField != null ? b.deleteField : "is_deleted";
+    this.checkDeleteEnabled   = b.checkDeleteEnabled;
+    this.deleteField          = b.deleteField != null ? b.deleteField : "is_deleted";
+    this.thenOrderBy          = b.thenOrderBy;
+    this.thenDescending       = b.thenDescending;
   }
 
-  // ─── Explicit getters ────────────────────────────────────────────────────
+  // ─── Derived predicates ───────────────────────────────────────────────────
 
-  // ─── Derived predicates ──────────────────────────────────────────────────
+  public boolean hasPinnedIds()             { return !pinnedIds.isEmpty(); }
+  public boolean hasColumnFilters()         { return !columnFilters.isEmpty(); }
+  public boolean hasSelectIds()             { return !selectIds.isEmpty(); }
+  public boolean hasCursor()                { return cursor != null && cursor > 0; }
+  public boolean hasFtsSearch()             { return ftsField != null && ftsQuery != null && !ftsQuery.isBlank(); }
+  public boolean hasThenOrderBy()           { return thenOrderBy != null && !thenOrderBy.isBlank(); }
 
-  public boolean hasPinnedIds()      { return !pinnedIds.isEmpty(); }
-  public boolean hasColumnFilters()  { return !columnFilters.isEmpty(); }
-  public boolean hasSelectIds()      { return !selectIds.isEmpty(); }
-  public boolean hasCursor()         { return cursor != null && cursor > 0; }
-  public boolean hasFtsSearch()      { return ftsField != null && ftsQuery != null && !ftsQuery.isBlank(); }
-  public boolean hasKeywordSearch()  { return keyword != null && !keyword.trim().isEmpty() && !searchFields.isEmpty(); }
-  public boolean hasIdSearch()       { return idField != null && keyword != null && !keyword.trim().isEmpty(); }
-  public boolean isKeywordNumeric()  { return keyword != null && keyword.trim().matches("\\d+"); }
+  public boolean hasKeywordSearch() {
+    return keyword != null && !keyword.trim().isEmpty() && !searchFields.isEmpty();
+  }
+
+  /** True when there are numeric fields to search AND a keyword is present. */
+  public boolean hasNumberKeywordSearch() {
+    return keyword != null && !keyword.trim().isEmpty() && !numberSearchFields.isEmpty();
+  }
+
+  public boolean hasIdSearch() {
+    return idField != null && keyword != null && !keyword.trim().isEmpty();
+  }
+
+  /** True when the keyword consists entirely of digits (safe to bind as Long). */
+  public boolean isKeywordNumeric() {
+    return keyword != null && keyword.trim().matches("\\d+");
+  }
 
   public static Builder builder() { return new Builder(); }
 
-  // ─── Builder ─────────────────────────────────────────────────────────────
+  // ─── Builder ──────────────────────────────────────────────────────────────
 
   public static class Builder {
     private String                           keyword;
     private List<String>                     searchFields         = new ArrayList<>();
+    private List<String>                     numberSearchFields   = new ArrayList<>();
     private final Map<String, Object>        filters              = new HashMap<>();
     private final Map<String, Collection<?>> inFilters            = new HashMap<>();
     private final Map<String, DateRange>     dateRanges           = new HashMap<>();
@@ -120,24 +134,88 @@ public class PageQueryParams {
     private List<Long>                       pinnedIds            = new ArrayList<>();
     private boolean                          checkDeleteEnabled   = false;
     private String                           deleteField;
+    private String                           thenOrderBy;
+    private boolean                          thenDescending       = true;
+
+    // ── Basic ─────────────────────────────────────────────────────────────
 
     public Builder keyword(String keyword)            { this.keyword = keyword; return this; }
-    public Builder searchFields(String... fields)     { this.searchFields = new ArrayList<>(Arrays.asList(fields)); return this; }
-    public Builder searchFields(List<String> fields)  { this.searchFields = new ArrayList<>(fields); return this; }
-    public Builder idField(String field)              { this.idField = field; return this; }
-    public Builder index(int index)                   { this.index = index; return this; }
-    public Builder size(int size)                     { this.size = size; return this; }
-    public Builder orderBy(String field)              { this.orderBy = field; return this; }
-    public Builder ascending()                        { this.descending = false; return this; }
-    public Builder descending()                       { this.descending = true; return this; }
-    public Builder cursorMode()                       { this.cursorMode = true; return this; }
-    public Builder cursorField(String field)          { this.cursorField = field; return this; }
+    public Builder idField(String field)              { this.idField = field;   return this; }
+    public Builder index(int index)                   { this.index  = index;    return this; }
+    public Builder size(int size)                     { this.size   = size;     return this; }
 
+    // ── Text search fields ────────────────────────────────────────────────
+
+    public Builder searchFields(String... fields) {
+      this.searchFields = new ArrayList<>(Arrays.asList(fields));
+      return this;
+    }
+
+    public Builder searchFields(List<String> fields) {
+      this.searchFields = new ArrayList<>(fields);
+      return this;
+    }
+
+    // ── Numeric search fields (BIGINT exact + TEXT LIKE) ──────────────────
+
+    /**
+     * Columns that hold numeric IDs (BIGINT / numeric types).
+     * When a keyword is present:
+     *   – if the keyword is all-digits → exact match (col = :num_exact_col)
+     *   – always                       → LIKE match  (CAST(col AS TEXT) LIKE :num_like_col)
+     * Multiple fields are OR-joined in one parenthesised group.
+     */
+    public Builder numberSearchFields(String... fields) {
+      this.numberSearchFields = new ArrayList<>(Arrays.asList(fields));
+      return this;
+    }
+
+    public Builder numberSearchFields(List<String> fields) {
+      this.numberSearchFields = new ArrayList<>(fields);
+      return this;
+    }
+
+    // ── Sorting ───────────────────────────────────────────────────────────
+
+    public Builder orderBy(String field)              { this.orderBy    = field; return this; }
+    public Builder ascending()                        { this.descending = false; return this; }
+    public Builder descending()                       { this.descending = true;  return this; }
+
+    /**
+     * Secondary sort applied after the primary {@link #orderBy}.
+     * Defaults to descending; chain {@link #thenOrderByAsc(String)} for ascending.
+     */
+    public Builder thenOrderBy(String field) {
+      this.thenOrderBy    = field;
+      this.thenDescending = true;
+      return this;
+    }
+
+    public Builder thenOrderByAsc(String field) {
+      this.thenOrderBy    = field;
+      this.thenDescending = false;
+      return this;
+    }
+
+    // ── Cursor ────────────────────────────────────────────────────────────
+
+    public Builder cursorMode()                       { this.cursorMode  = true;  return this; }
+    public Builder cursorField(String field)          { this.cursorField = field;  return this; }
+
+    public Builder cursor(Long cursor) {
+      this.cursor     = cursor;
+      this.cursorMode = true;
+      return this;
+    }
+
+    // ── Pinned ids ────────────────────────────────────────────────────────
 
     public Builder pinnedIds(List<Long> ids) {
       if (ids != null && !ids.isEmpty()) this.pinnedIds = new ArrayList<>(ids);
       return this;
     }
+
+    // ── Audit scope ───────────────────────────────────────────────────────
 
     public Builder auditEnable() {
       this.auditEnabled = true;
@@ -150,24 +228,22 @@ public class PageQueryParams {
       return this;
     }
 
-    /** Enable soft-delete visibility control (column defaults to "is_deleted"). */
+    // ── Soft-delete ───────────────────────────────────────────────────────
+
+    /** Enable soft-delete filter; column defaults to {@code is_deleted}. */
     public Builder checkDelete() {
       this.checkDeleteEnabled = true;
       return this;
     }
 
-    /** Enable soft-delete visibility control with a custom column name. */
+    /** Enable soft-delete filter with a custom column name. */
     public Builder checkDelete(String field) {
       this.checkDeleteEnabled = true;
       this.deleteField        = field;
       return this;
     }
 
-    public Builder cursor(Long cursor) {
-      this.cursor     = cursor;
-      this.cursorMode = true;
-      return this;
-    }
+    // ── Exact / IN / date filters ─────────────────────────────────────────
 
     public Builder filter(String field, Object value) {
       if (value != null) this.filters.put(field, value);
@@ -179,13 +255,13 @@ public class PageQueryParams {
       return this;
     }
 
-    public void filterIn(String field, Collection<?> values) {
-      if (values != null && !values.isEmpty()) this.inFilters.put(field, values);
-    }
-
     public Builder filterIn(String field, Object... values) {
       if (values != null && values.length > 0) this.inFilters.put(field, Arrays.asList(values));
       return this;
+    }
+
+    public void filterIn(String field, Collection<?> values) {
+      if (values != null && !values.isEmpty()) this.inFilters.put(field, values);
     }
 
     public Builder dateRange(String field, DateRange range) {
@@ -208,6 +284,8 @@ public class PageQueryParams {
       return this;
     }
 
+    // ── FTS ───────────────────────────────────────────────────────────────
+
     public Builder ftsSearch(String field, String query) {
       if (field != null && query != null && !query.isBlank()) {
         this.ftsField = field;
@@ -215,6 +293,8 @@ public class PageQueryParams {
       }
       return this;
     }
+
+    // ── Select / column filters ───────────────────────────────────────────
 
     public Builder selectIds(List<Long> ids) {
       if (ids != null && !ids.isEmpty()) this.selectIds = new ArrayList<>(ids);
