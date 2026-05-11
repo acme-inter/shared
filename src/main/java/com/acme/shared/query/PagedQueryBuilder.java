@@ -49,7 +49,7 @@ public class PagedQueryBuilder<T, R> {
       """;
 
   private static final ObjectMapper MAPPER           = new ObjectMapper();
-  private static final Set<String>  PRIVILEGED_ROLES = Set.of("ADMINISTRATOR", "DEVELOPER");
+  private static final Set<String>  PRIVILEGED_ROLES = Set.of("ADMINISTRATOR", "DEVELOPER", "MANAGEMENT");
 
   // ─── Audit context resolution ─────────────────────────────────────────────
 
@@ -196,8 +196,7 @@ public class PagedQueryBuilder<T, R> {
         .flatMap(audit -> {
           long limit  = params.getSize() + 1L;
           long offset = (long) params.getIndex() * params.getSize();
-          DatabaseClient.GenericExecuteSpec spec =
-              bindParameters(databaseClient.sql(buildDataQuery(params, audit, limit, offset)), params, audit);
+          DatabaseClient.GenericExecuteSpec spec = bindParameters(databaseClient.sql(buildDataQuery(params, audit, limit, offset)), params, audit);
 
           return spec.map((row, meta) -> rowMapper.apply(row)).all().collectList()
               .flatMap(results -> {

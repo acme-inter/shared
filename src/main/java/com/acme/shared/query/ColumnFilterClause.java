@@ -4,7 +4,10 @@ import com.acme.shared.enums.FilterOperator;
 import com.acme.shared.payload.table.FilterDTO;
 import org.springframework.r2dbc.core.DatabaseClient;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 
@@ -13,7 +16,6 @@ public class ColumnFilterClause {
   private final List<FilterDTO> filters;
   private final Set<String>     allowedFields;
 
-  // Column name suffixes that hold timestamp/date values
   private static final List<String> DATE_FIELD_SUFFIXES = List.of(
       "_at", "_date", "_time", "_on"
   );
@@ -41,16 +43,15 @@ public class ColumnFilterClause {
     return spec;
   }
 
-  // ─── Private ──────────────────────────────────────────────────────────────
+  // ─── SQL fragment builder (pure string — no binding here) ─────────────────
 
   private String buildFragment(FilterDTO filter, int idx) {
-    // normalise camelCase → snake_case before validation and SQL
-    String field  = toSnakeCase(filter.getField());
+    String field = toSnakeCase(filter.getField());
     validateField(field);
 
     FilterOperator op     = filter.operator();
     op.validate(filter);
-    String prefix = "cf_" + idx + "_";
+    String  prefix = "cf_" + idx + "_";
     boolean isDate = isDateField(field);
 
     return switch (op) {
@@ -63,25 +64,27 @@ public class ColumnFilterClause {
       case IS_NULL      -> "(" + field + " IS NULL)";
       case IS_NOT_NULL  -> "(" + field + " IS NOT NULL)";
       case GT           -> isDate
-          ? "(" + field + " > (:"   + prefix + "v)::timestamptz)"
-          : "(" + field + " > :"    + prefix + "v)";
+          ? "(" + field + " > (:"  + prefix + "v)::timestamptz)"
+          : "(" + field + " > :"   + prefix + "v)";
       case GTE          -> isDate
-          ? "(" + field + " >= (:"  + prefix + "v)::timestamptz)"
-          : "(" + field + " >= :"   + prefix + "v)";
+          ? "(" + field + " >= (:" + prefix + "v)::timestamptz)"
+          : "(" + field + " >= :"  + prefix + "v)";
       case LT           -> isDate
-          ? "(" + field + " < (:"   + prefix + "v)::timestamptz)"
-          : "(" + field + " < :"    + prefix + "v)";
+          ? "(" + field + " < (:"  + prefix + "v)::timestamptz)"
+          : "(" + field + " < :"   + prefix + "v)";
       case LTE          -> isDate
-          ? "(" + field + " <= (:"  + prefix + "v)::timestamptz)"
-          : "(" + field + " <= :"   + prefix + "v)";
+          ? "(" + field + " <= (:" + prefix + "v)::timestamptz)"
+          : "(" + field + " <= :"  + prefix + "v)";
       case BETWEEN      -> isDate
           ? "(" + field + " BETWEEN (:" + prefix + "v0)::timestamptz"
           + " AND (:"     + prefix + "v1)::timestamptz)"
           : "(" + field + " BETWEEN :"  + prefix + "v0 AND :" + prefix + "v1)";
-      case IN           -> "(" + field + " IN ("     + inPlaceholders(prefix, filter.getValues().size()) + "))";
-      case NOT_IN       -> "(" + field + " NOT IN (" + inPlaceholders(prefix, filter.getValues().size()) + "))";
+      case IN           -> "(" + field + " IN ("     + inPlaceholders(prefix, normalizeValues(filter).size()) + "))";
+      case NOT_IN       -> "(" + field + " NOT IN (" + inPlaceholders(prefix, normalizeValues(filter).size()) + "))";
     };
   }
+
+  // ─── Parameter binder ─────────────────────────────────────────────────────
 
   private DatabaseClient.GenericExecuteSpec bindFilter(
       DatabaseClient.GenericExecuteSpec spec, FilterDTO filter, int idx) {
@@ -90,39 +93,81 @@ public class ColumnFilterClause {
     String         prefix = "cf_" + idx + "_";
 
     switch (op) {
-      case IS_NULL, IS_NOT_NULL -> { /* no bindings */ }
-      case CONTAINS, NOT_CONTAINS, STARTS_WITH, ENDS_WITH,
-           EQ, NEQ, GT, GTE, LT, LTE ->
-          spec = spec.bind(prefix + "v", filter.getValue());
-      case BETWEEN -> {
-        spec = spec.bind(prefix + "v0", filter.getValues().get(0));
-        spec = spec.bind(prefix + "v1", filter.getValues().get(1));
-      }
-      case IN, NOT_IN -> {
-        List<Object> vals = filter.getValues();
+      case IS_NULL:
+      case IS_NOT_NULL:
+        break;
+      case CONTAINS: case NOT_CONTAINS: case STARTS_WITH: case ENDS_WITH:
+      case EQ: case NEQ: case GT: case GTE: case LT: case LTE:
+        spec = spec.bind(prefix + "v", coerceValue(filter.getValue()));
+        break;
+      case BETWEEN:
+        spec = spec.bind(prefix + "v0", toInstantIfNeeded(filter.getValues().get(0)));
+        spec = spec.bind(prefix + "v1", toInstantIfNeeded(filter.getValues().get(1)));
+        break;
+      case IN: case NOT_IN: {
+        List<Object> vals = normalizeValues(filter);
         for (int j = 0; j < vals.size(); j++) {
-          spec = spec.bind(prefix + "v" + j, vals.get(j));
+          spec = spec.bind(prefix + "v" + j, coerceValue(vals.get(j)));
         }
+        break;
       }
     }
     return spec;
   }
 
-  private void validateField(String field) {
-    if (field == null || field.isBlank()) {
-      throw new IllegalArgumentException("Filter field must not be blank.");
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /**
+   * Handles the edge case where the frontend sends ["1,2,3"] (one comma-joined
+   * string) instead of ["1","2","3"]. Splits it into individual elements.
+   */
+  private List<Object> normalizeValues(FilterDTO filter) {
+    List<Object> raw = filter.getValues();
+    if (raw == null) return List.of();
+    if (raw.size() == 1 && raw.getFirst() instanceof String s && s.contains(",")) {
+      return Arrays.stream(s.split(","))
+          .map(String::trim)
+          .filter(v -> !v.isEmpty())
+          .map(v -> (Object) v)
+          .toList();
     }
-    if (!allowedFields.isEmpty() && !allowedFields.contains(field)) {
+    return raw;
+  }
+
+  /**
+   * Coerces a String to Long when it is all-digits — needed because R2DBC will
+   * not auto-cast a String binding to a BIGINT column (e.g. created_by, member_id).
+   * Non-numeric strings and non-String types are returned unchanged.
+   */
+  private Object coerceValue(Object v) {
+    if (v instanceof String s) {
+      try { return Long.parseLong(s.trim()); } catch (NumberFormatException ignored) {}
+    }
+    return v;
+  }
+
+  /**
+   * Parses an ISO-8601 string to Instant for BETWEEN bindings on timestamptz
+   * columns. R2DBC rejects raw String bindings on timestamp columns.
+   */
+  private Object toInstantIfNeeded(Object value) {
+    if (!(value instanceof String s)) return value;
+    try { return Instant.parse(s); } catch (Exception ignored) {}
+    try { return OffsetDateTime.parse(s).toInstant(); } catch (Exception ignored) {}
+    return value;
+  }
+
+  private void validateField(String field) {
+    if (field == null || field.isBlank())
+      throw new IllegalArgumentException("Filter field must not be blank.");
+    if (!allowedFields.isEmpty() && !allowedFields.contains(field))
       throw new IllegalArgumentException(
           "Filter field '" + field + "' is not permitted. Allowed: " + allowedFields);
-    }
   }
 
   private String toSnakeCase(String field) {
     if (field == null) return null;
-    return field
-        .replaceAll("([a-z0-9])([A-Z])", "$1_$2")
-        .toLowerCase();
+    return field.replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase();
   }
 
   private boolean isDateField(String snakeField) {
