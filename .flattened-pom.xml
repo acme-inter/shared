@@ -6,7 +6,7 @@
 
     <groupId>com.acme</groupId>
     <artifactId>shared</artifactId>
-    <version>1.1.3</version>
+    <version>1.1.4</version>
     <packaging>jar</packaging>
 
     <name>shared</name>
@@ -20,7 +20,7 @@
     </parent>
 
     <properties>
-        <revision>1.1.3</revision>
+        <revision>1.1.4</revision>
         <java.version>21</java.version>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -33,6 +33,7 @@
         <lark-sdk.version>2.5.3</lark-sdk.version>
         <guava.version>33.6.0-jre</guava.version>
         <ua.version>8.1.1</ua.version>
+        <poi.ooxl.version>5.5.1</poi.ooxl.version>
 
         <!-- Not managed by spring-boot-starter-parent -->
         <flatten-maven-plugin.version>1.7.3</flatten-maven-plugin.version>
@@ -98,6 +99,11 @@
             <version>${auth0-jwt.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.ooxl.version}</version>
+        </dependency>
         <!-- ── AWS S3 ─────────────────────────────────────────────────────── -->
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
@@ -166,7 +172,16 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
+    <dependencyManagement>
+        <dependencies>
+            <!-- Resolve RequireUpperBoundDeps: poi requires 1.20.0, managed was 1.19.0 -->
+            <dependency>
+                <groupId>commons-codec</groupId>
+                <artifactId>commons-codec</artifactId>
+                <version>1.20.0</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     <build>
         <plugins>
             <plugin>
