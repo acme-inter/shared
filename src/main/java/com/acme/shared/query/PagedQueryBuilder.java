@@ -85,14 +85,23 @@ public class PagedQueryBuilder<T, R> {
 
   private List<FilterDTO> resolveColumnFilters(PageQueryParams params, AuditDTO audit) {
     if (!params.isAuditDeleteEnabled()) return params.getColumnFilters();
-    boolean adminOnly = audit != null
+    boolean isAdmin = audit != null
         && audit.getRoleType() != null
         && audit.getRoleType().name().equals("ADMINISTRATOR");
-    if (adminOnly) return params.getColumnFilters();
+    if (isAdmin) return params.getColumnFilters();
     return params.getColumnFilters().stream()
         .filter(f -> !f.getField().equalsIgnoreCase("isDeleted")
             && !f.getField().equalsIgnoreCase("is_deleted"))
         .toList();
+  }
+
+  private String auditDeleteCondition(PageQueryParams params, AuditDTO audit) {
+    if (!params.isAuditDeleteEnabled()) return null;
+    boolean isAdmin = audit != null
+        && audit.getRoleType() != null
+        && audit.getRoleType().name().equals("ADMINISTRATOR");
+    if (isAdmin) return null;
+    return "is_deleted = false";
   }
   // ─── Constructor ──────────────────────────────────────────────────────────
 
@@ -390,7 +399,7 @@ public class PagedQueryBuilder<T, R> {
     inFilterConditions(params, conditions);
     dateRangeConditions(params, conditions);
     addIfPresent(conditions, columnFilterCondition(params, audit));
-    addIfPresent(conditions, softDeleteCondition(params, audit));
+    addIfPresent(conditions, auditDeleteCondition(params, audit));
     return String.join(" AND ", conditions);
   }
 
