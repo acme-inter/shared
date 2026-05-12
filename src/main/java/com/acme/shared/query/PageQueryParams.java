@@ -37,6 +37,7 @@ public class PageQueryParams {
   // ─── Audit-scope fields ───────────────────────────────────────────────────
   private final boolean auditEnabled;
   private final String  auditDepartmentField;
+  private final boolean auditDeleteEnabled;
 
   // ─── Soft-delete visibility ───────────────────────────────────────────────
   private final boolean checkDeleteEnabled;
@@ -76,6 +77,7 @@ public class PageQueryParams {
     this.deleteField          = b.deleteField != null ? b.deleteField : "is_deleted";
     this.thenOrderBy          = b.thenOrderBy;
     this.thenDescending       = b.thenDescending;
+    this.auditDeleteEnabled   = b.auditDeleteEnabled;
   }
 
   // ─── Derived predicates ───────────────────────────────────────────────────
@@ -136,6 +138,7 @@ public class PageQueryParams {
     private String                           deleteField;
     private String                           thenOrderBy;
     private boolean                          thenDescending       = true;
+    private boolean                          auditDeleteEnabled;
 
     // ── Basic ─────────────────────────────────────────────────────────────
 
@@ -228,6 +231,11 @@ public class PageQueryParams {
       return this;
     }
 
+    public Builder auditDelete() {
+      this.auditDeleteEnabled = true;
+      this.auditEnabled       = true; // need audit resolved to know role
+      return this;
+    }
     // ── Soft-delete ───────────────────────────────────────────────────────
 
     /** Enable soft-delete filter; column defaults to {@code is_deleted}. */

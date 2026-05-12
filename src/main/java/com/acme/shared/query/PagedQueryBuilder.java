@@ -83,6 +83,17 @@ public class PagedQueryBuilder<T, R> {
     public static UserViewResult empty() { return new UserViewResult(null, null, null); }
   }
 
+  private List<FilterDTO> resolveColumnFilters(PageQueryParams params, AuditDTO audit) {
+    if (!params.isAuditDeleteEnabled()) return params.getColumnFilters();
+    boolean adminOnly = audit != null
+        && audit.getRoleType() != null
+        && audit.getRoleType().name().equals("ADMINISTRATOR");
+    if (adminOnly) return params.getColumnFilters();
+    return params.getColumnFilters().stream()
+        .filter(f -> !f.getField().equalsIgnoreCase("isDeleted")
+            && !f.getField().equalsIgnoreCase("is_deleted"))
+        .toList();
+  }
   // ─── Constructor ──────────────────────────────────────────────────────────
 
   public PagedQueryBuilder(DatabaseClient databaseClient, MsgUtil msgUtil) {
@@ -378,7 +389,7 @@ public class PagedQueryBuilder<T, R> {
     exactFilterConditions(params, conditions);
     inFilterConditions(params, conditions);
     dateRangeConditions(params, conditions);
-    addIfPresent(conditions, columnFilterCondition(params));
+    addIfPresent(conditions, columnFilterCondition(params, audit));
     addIfPresent(conditions, softDeleteCondition(params, audit));
     return String.join(" AND ", conditions);
   }
@@ -446,10 +457,10 @@ public class PagedQueryBuilder<T, R> {
     });
   }
 
-  private String columnFilterCondition(PageQueryParams params) {
-    if (!params.hasColumnFilters()) return null;
-    ColumnFilterClause clause = new ColumnFilterClause(
-        params.getColumnFilters(), params.getAllowedFilterFields());
+  private String columnFilterCondition(PageQueryParams params, AuditDTO audit) {
+    List<FilterDTO> filters = resolveColumnFilters(params, audit);
+    if (filters.isEmpty()) return null;
+    ColumnFilterClause clause = new ColumnFilterClause(filters, params.getAllowedFilterFields());
     String sql = clause.toSql();
     return sql.isEmpty() ? null : sql;
   }
@@ -507,8 +518,8 @@ public class PagedQueryBuilder<T, R> {
     }
 
     if (params.hasColumnFilters()) {
-      ColumnFilterClause clause = new ColumnFilterClause(
-          params.getColumnFilters(), params.getAllowedFilterFields());
+      List<FilterDTO> filters = resolveColumnFilters(params, audit);
+      ColumnFilterClause clause = new ColumnFilterClause(filters, params.getAllowedFilterFields());
       spec = clause.bind(spec);
     }
     return spec;
