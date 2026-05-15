@@ -32,6 +32,7 @@ public class PagedQueryBuilder<T, R> {
   private       Function<Row, T>           rowMapper;
   private       Function<List<T>, Flux<R>> converter;
   private       Function<T, Long>          cursorExtractor;
+  private       String                     joinClause;
 
   private BiFunction<Long, String, Mono<UserViewResult>> viewLoader;
   private Long   viewMemberId;
@@ -115,6 +116,8 @@ public class PagedQueryBuilder<T, R> {
   public PagedQueryBuilder<T, R> baseQuery(String query)              { this.baseQuery = query;   return this; }
   public PagedQueryBuilder<T, R> countQuery(String query)             { this.countQuery = query;  return this; }
   public PagedQueryBuilder<T, R> cursorExtractor(Function<T, Long> e) { this.cursorExtractor = e; return this; }
+
+  public PagedQueryBuilder<T, R> joinQuery(String join) { this.joinClause = join; return this; }
 
   public void rowMapper(Function<Row, T> m)           { this.rowMapper = m; }
   public void converter(Function<List<T>, Flux<R>> c) { this.converter = c; }
@@ -313,6 +316,7 @@ public class PagedQueryBuilder<T, R> {
 
   private String buildDataQuery(PageQueryParams params, AuditDTO audit, long limit, long offset) {
     StringBuilder q        = new StringBuilder(baseQuery);
+    if (joinClause != null) q.append(" ").append(joinClause);
     String        where    = buildWhereClause(params, audit);
     boolean       hasWhere = baseQuery.toUpperCase().contains(" WHERE ");
 
@@ -343,6 +347,7 @@ public class PagedQueryBuilder<T, R> {
 
   private String buildCursorDataQuery(PageQueryParams params, AuditDTO audit) {
     StringBuilder q          = new StringBuilder(baseQuery);
+    if (joinClause != null) q.append(" ").append(joinClause);
     List<String>  conditions = new ArrayList<>();
     String        where      = buildWhereClause(params, audit);
 
@@ -366,6 +371,7 @@ public class PagedQueryBuilder<T, R> {
 
   private String buildCountQueryAuto(PageQueryParams params, AuditDTO audit) {
     StringBuilder inner    = new StringBuilder(baseQuery);
+    if (joinClause != null) inner.append(" ").append(joinClause);
     String        where    = buildWhereClause(params, audit);
     boolean       hasWhere = baseQuery.toUpperCase().contains(" WHERE ");
     if (!where.isEmpty()) inner.append(hasWhere ? " AND " : " WHERE ").append(where);
@@ -410,12 +416,16 @@ public class PagedQueryBuilder<T, R> {
     return params.getAuditDepartmentField() + " = :audit_department_id";
   }
 
-  /** Text LIKE across searchFields, OR-joined with idField when present. */
+  /** Text LIKE across searchFields + jsonSearchFields, OR-joined with idField when present. */
   private String keywordCondition(PageQueryParams params) {
-    if (!params.hasKeywordSearch() && !params.hasIdSearch()) return null;
+    if (!params.hasKeywordSearch() && !params.hasJsonKeywordSearch() && !params.hasIdSearch()) return null;
     List<String> parts = new ArrayList<>();
     if (params.hasKeywordSearch()) {
       for (String field : params.getSearchFields())
+        parts.add("LOWER(" + field + ") LIKE :search_" + sanitize(field));
+    }
+    if (params.hasJsonKeywordSearch()) {
+      for (String field : params.getJsonSearchFields())
         parts.add("LOWER(" + field + ") LIKE :search_" + sanitize(field));
     }
     if (params.hasIdSearch()) {
@@ -488,9 +498,11 @@ public class PagedQueryBuilder<T, R> {
       spec = spec.bind("audit_department_id", deptId);
     }
 
-    if (params.hasKeywordSearch()) {
+    if (params.hasKeywordSearch() || params.hasJsonKeywordSearch()) {
       String pattern = "%" + params.getKeyword().toLowerCase() + "%";
       for (String field : params.getSearchFields())
+        spec = spec.bind("search_" + sanitize(field), pattern);
+      for (String field : params.getJsonSearchFields())
         spec = spec.bind("search_" + sanitize(field), pattern);
     }
 

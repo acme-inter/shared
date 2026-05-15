@@ -1,6 +1,7 @@
 package com.acme.shared.query;
 
 import com.acme.shared.payload.table.FilterDTO;
+import com.acme.shared.payload.table.SortDTO;
 import lombok.Getter;
 
 import java.time.Instant;
@@ -14,6 +15,9 @@ public class PageQueryParams {
   private final String                     keyword;
   private final List<String>               searchFields;
   private final List<String>               numberSearchFields;
+
+  private final List<String>               jsonSearchFields;
+
   private final Map<String, Object>        filters;
   private final Map<String, Collection<?>> inFilters;
   private final Map<String, DateRange>     dateRanges;
@@ -52,6 +56,7 @@ public class PageQueryParams {
     this.keyword              = b.keyword;
     this.searchFields         = List.copyOf(b.searchFields);
     this.numberSearchFields   = List.copyOf(b.numberSearchFields);
+    this.jsonSearchFields     = List.copyOf(b.jsonSearchFields);
     this.filters              = Map.copyOf(b.filters);
     this.inFilters            = Map.copyOf(b.inFilters);
     this.dateRanges           = Map.copyOf(b.dateRanges);
@@ -82,15 +87,20 @@ public class PageQueryParams {
 
   // ─── Derived predicates ───────────────────────────────────────────────────
 
-  public boolean hasPinnedIds()             { return !pinnedIds.isEmpty(); }
-  public boolean hasColumnFilters()         { return !columnFilters.isEmpty(); }
-  public boolean hasSelectIds()             { return !selectIds.isEmpty(); }
-  public boolean hasCursor()                { return cursor != null && cursor > 0; }
-  public boolean hasFtsSearch()             { return ftsField != null && ftsQuery != null && !ftsQuery.isBlank(); }
-  public boolean hasThenOrderBy()           { return thenOrderBy != null && !thenOrderBy.isBlank(); }
+  public boolean hasPinnedIds()           { return !pinnedIds.isEmpty(); }
+  public boolean hasColumnFilters()       { return !columnFilters.isEmpty(); }
+  public boolean hasSelectIds()           { return !selectIds.isEmpty(); }
+  public boolean hasCursor()              { return cursor != null && cursor > 0; }
+  public boolean hasFtsSearch()           { return ftsField != null && ftsQuery != null && !ftsQuery.isBlank(); }
+  public boolean hasThenOrderBy()         { return thenOrderBy != null && !thenOrderBy.isBlank(); }
 
   public boolean hasKeywordSearch() {
     return keyword != null && !keyword.trim().isEmpty() && !searchFields.isEmpty();
+  }
+
+  /** True when there are JSON text columns to search AND a keyword is present. */
+  public boolean hasJsonKeywordSearch() {
+    return keyword != null && !keyword.trim().isEmpty() && !jsonSearchFields.isEmpty();
   }
 
   /** True when there are numeric fields to search AND a keyword is present. */
@@ -115,6 +125,7 @@ public class PageQueryParams {
     private String                           keyword;
     private List<String>                     searchFields         = new ArrayList<>();
     private List<String>                     numberSearchFields   = new ArrayList<>();
+    private List<String>                     jsonSearchFields     = new ArrayList<>();
     private final Map<String, Object>        filters              = new HashMap<>();
     private final Map<String, Collection<?>> inFilters            = new HashMap<>();
     private final Map<String, DateRange>     dateRanges           = new HashMap<>();
@@ -142,10 +153,10 @@ public class PageQueryParams {
 
     // ── Basic ─────────────────────────────────────────────────────────────
 
-    public Builder keyword(String keyword)            { this.keyword = keyword; return this; }
-    public Builder idField(String field)              { this.idField = field;   return this; }
-    public Builder index(int index)                   { this.index  = index;    return this; }
-    public Builder size(int size)                     { this.size   = size;     return this; }
+    public Builder keyword(String keyword) { this.keyword = keyword; return this; }
+    public Builder idField(String field)   { this.idField = field;   return this; }
+    public Builder index(int index)        { this.index   = index;   return this; }
+    public Builder size(int size)          { this.size    = size;    return this; }
 
     // ── Text search fields ────────────────────────────────────────────────
 
@@ -178,15 +189,40 @@ public class PageQueryParams {
       return this;
     }
 
+    // ── JSON text search fields ───────────────────────────────────────────
+
+    /**
+     * View columns that contain a JSON array / object serialised as TEXT
+     * (e.g. {@code industries}, {@code lead_sources} in v_lead_page).
+     * Searched with a LOWER(…) LIKE pattern — sufficient for substring
+     * matching against embedded JSON field values such as industry names.
+     * No lateral join or extra SQL required; the view already exposes these
+     * as plain TEXT columns.
+     * <p>
+     * Example:
+     * <pre>{@code
+     *   .jsonSearchFields("industries", "lead_sources")
+     * }</pre>
+     */
+    public Builder jsonSearchFields(String... fields) {
+      this.jsonSearchFields = new ArrayList<>(Arrays.asList(fields));
+      return this;
+    }
+
+    public Builder jsonSearchFields(List<String> fields) {
+      this.jsonSearchFields = new ArrayList<>(fields);
+      return this;
+    }
+
     // ── Sorting ───────────────────────────────────────────────────────────
 
-    public Builder orderBy(String field)              { this.orderBy    = field; return this; }
-    public Builder ascending()                        { this.descending = false; return this; }
-    public Builder descending()                       { this.descending = true;  return this; }
+    public Builder orderBy(String field) { this.orderBy    = field; return this; }
+    public Builder ascending()           { this.descending = false; return this; }
+    public Builder descending()          { this.descending = true;  return this; }
 
     /**
      * Secondary sort applied after the primary {@link #orderBy}.
-     * Defaults to descending; chain {@link #thenOrderByAsc(String)} for ascending.
+     * Defaults to descending; use {@link #thenOrderByAsc(String)} for ascending.
      */
     public Builder thenOrderBy(String field) {
       this.thenOrderBy    = field;
@@ -200,10 +236,28 @@ public class PageQueryParams {
       return this;
     }
 
+
+    public Builder sorts(List<SortDTO> sorts) {
+      if (sorts == null || sorts.isEmpty()) return this;
+      SortDTO primary = sorts.get(0);
+      if (primary.getField() != null && !primary.getField().isBlank()) {
+        this.orderBy    = primary.getField();
+        this.descending = !"ASC".equalsIgnoreCase(primary.getDirection());
+      }
+      if (sorts.size() > 1) {
+        SortDTO secondary = sorts.get(1);
+        if (secondary.getField() != null && !secondary.getField().isBlank()) {
+          this.thenOrderBy    = secondary.getField();
+          this.thenDescending = !"ASC".equalsIgnoreCase(secondary.getDirection());
+        }
+      }
+      return this;
+    }
+
     // ── Cursor ────────────────────────────────────────────────────────────
 
-    public Builder cursorMode()                       { this.cursorMode  = true;  return this; }
-    public Builder cursorField(String field)          { this.cursorField = field;  return this; }
+    public Builder cursorMode()              { this.cursorMode  = true;  return this; }
+    public Builder cursorField(String field) { this.cursorField = field;  return this; }
 
     public Builder cursor(Long cursor) {
       this.cursor     = cursor;
@@ -236,6 +290,7 @@ public class PageQueryParams {
       this.auditEnabled       = true; // need audit resolved to know role
       return this;
     }
+
     // ── Soft-delete ───────────────────────────────────────────────────────
 
     /** Enable soft-delete filter; column defaults to {@code is_deleted}. */
